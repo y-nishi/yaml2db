@@ -1,6 +1,6 @@
 require 'test/unit'
 require 'yaml'
-require_relative 'create_table'
+require_relative 'yaml2db'
 require 'pp'
 
 class TestSql_Column < Test::Unit::TestCase
