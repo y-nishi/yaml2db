@@ -68,6 +68,10 @@ class Domains < LoadableElement
 end
 
 class Dictionary < LoadableElement
+  def translate(string)
+    # original_nameを.で分割し、dictで変換
+    string.split('.').inject(""){|r, e| r + (@root[e] || e)}
+  end
 end
 
 class Column
@@ -101,12 +105,35 @@ class Column
     end
   end 
 
+  class Reference
+    attr_reader :table_index, :order, :column, :rcolumn
+    def initialize(referhash, column_name)
+      @column = column_name
+      @table_index = referhash["table"]
+      @order = referhash["order"] || 0
+      @rcolumn = referhash["column"] || @column
+    end
+    def <=>(other)
+      return self.order <=> other.order
+    end
+  end
+    
+  def refers
+    refers = @root["refers"]
+    return nil unless refers
+    refers = [refers] unless refers.instance_of?(Array)
+    refers.map{|e| Reference.new(e, @pname)}
+  end
+
   private
 
   def make_pname(dict)
-    return nil unless dict
-    # original_nameを.で分割し、dictで変換
-    @oname.split('.').inject(""){|r, e| r + (dict[e] || e)} if @oname
+    return @oname unless dict
+    if @oname
+      dict.translate(@oname) 
+    else
+      @oname
+    end
   end
 
   def merge_attribute(domains, type)
@@ -131,6 +158,7 @@ class Table < LoadableElement
     end
 
     @checks = @root['checks']
+    @dict = dict
   end
 
   def self.load(filename, dict, domains)
@@ -155,6 +183,19 @@ class Table < LoadableElement
 
   def index(key)
     @columns.select{|e| e.indexes[key]}.sort{|x, y| x.indexes[key] <=> y.indexes[key]}
+  end
+
+  def refers
+    refers = @root["refers"] 
+    return nil unless refers
+    refers = [refers] unless refers.instance_of?(Array)
+    refers.map{|e| @dict.translate(e)}
+  end
+
+  def refer(table_index)
+    columns = @columns.select{|e| e.refers}
+    return nil unless columns
+    columns.inject([]){|r, v| r + v.refers.select{|f| f.table_index == table_index}}.sort
   end
 
   def comment
@@ -223,6 +264,15 @@ EOS
     table.index_keys.inject("") do |r, e|
       r + "create index I_#{table.pname}#{e.match(/\d+$/)[0]} on #{table.pname}(#{table.index(e).map{|col| col.pname}.join(", ")});\n"
     end
+  end
+
+  def get_ref_constraints(table)
+    refers = table.refers
+    return nil unless refers
+    sql = refers.map.with_index do |e, i|
+      "alter table #{table.pname} add foreign key(#{table.refer(i).map(&:column).join(',')}) references #{e}(#{table.refer(i).map(&:rcolumn).join(',')})"
+    end
+    sql.join(";\n")
   end
 
   def get_check(checked_obj, sepstr = " ")

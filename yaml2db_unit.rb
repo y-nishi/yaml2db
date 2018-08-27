@@ -107,6 +107,19 @@ class TestSql_Columns < Test::Unit::TestCase
     assert_equal 1, @columns[1].indexes["index2"]
   end
 
+  def test_refer
+    load_columns YAML.load("{columns: [{pname: TEST1, refers: {table: 1, order: 2, column: TEST2}},
+    {pname: TEST3, refers: [{table: 0}, {table: 1}] } ]}")
+    assert_equal 1, @columns[0].refers[0].table_index
+    assert_equal 2, @columns[0].refers[0].order
+    assert_equal "TEST2", @columns[0].refers[0].rcolumn
+    assert_equal "TEST1", @columns[0].refers[0].column
+
+    assert_equal 0, @columns[1].refers[0].table_index
+    assert_equal 0, @columns[1].refers[0].order
+    assert_equal "TEST3", @columns[1].refers[0].rcolumn
+    assert_equal "TEST3", @columns[1].refers[1].rcolumn
+  end
 
 end
 
@@ -180,5 +193,34 @@ class TestTable < Test::Unit::TestCase
     assert_equal "drop table test_table;\ncreate table test_table (\n  AAABBB number(10) DEFAULT 200 NOT NULL,\n  BBBCCC varchar(10)  NOT NULL,\n  CCCGGG number(10) DEFAULT 200 NOT NULL\n  , constraint PK_test_table primary key(CCCGGG, BBBCCC)\n  , CHECK(BBBCCC = CCCGGG)\n  , CHECK(CCCGGG < AAABBB)\n);\n", get_ddl_table(table)
 
   end
+
+  def test_refers
+
+    refer_test_table = "{table: {name: test_refers, refers: [word1.word4, word2.word3], columns: [name: dummy]}}"
+    table = Table.new(YAML.load(refer_test_table), nil, @dict, @domains)
+    assert_equal "AAAword4", table.refers[0]
+    assert_equal "BBBCCC", table.refers[1]
+
+    refer_test_table = "{table: {columns: [name: dummy]}}"
+    table = Table.new(YAML.load(refer_test_table), nil, @dict, @domains)
+    assert_equal nil, table.refers
+
+  end 
+
+  def test_refer
+    refer_test_table = "{table: {columns: [ {name: TEST1, refers: {table: 1, order: 999}}, {name: TEST2, refers: {table: 1}} ]}}"
+    table = Table.new(YAML.load(refer_test_table), nil, @dict, @domains)
+    assert_equal 999, table.refer(1)[1].order
+    assert_equal "TEST1", table.refer(1)[1].column
+    assert_equal "TEST2", table.refer(1)[0].column
+  end
+
+  def test_refer_sql
+    refer_test_table = "{table: {pname: test_refers, refers: ptable1, columns: [ {name: TEST1, refers: {table: 0, order: 999}}, {name: TEST2, refers: {table: 0, column: TEST9}} ]}}"
+    table = Table.new(YAML.load(refer_test_table), nil, @dict, @domains)
+
+    assert_equal "alter table test_refers add foreign key(TEST2,TEST1) references ptable1(TEST9,TEST1)", get_ref_constraints(table)
+  end
+
 
 end
